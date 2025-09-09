@@ -1,0 +1,38 @@
+// Firestore Security Rules for Tutorly Waitlist
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Waitlist collection - public access for demo
+    match /waitlist/{document=**} {
+      allow create: if true; // Allow anyone to create waitlist entries
+      allow read: if request.auth != null; // Only authenticated users can read
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.uid; // Only owner can modify
+
+      // Alternative: Full public access (not recommended for production)
+      // allow create, read, update, delete: if true;
+    }
+
+    // Demo collection - public for demo purposes
+    match /demo/{document=**} {
+      allow read, write: if true;
+    }
+
+    // User data - authenticated access only
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+
+// Note: For production, you should implement proper authentication
+// and restrict access based on user roles and data ownership.
+
+// To deploy these rules:
+// 1. Save this file as firestore.rules in your project root
+// 2. Run: firebase deploy --only firestore:rules
+
+// To view rules in Firebase Console:
+// 1. Go to Firebase Console > Firestore Database
+// 2. Click on "Rules" tab
+// 3. Copy and paste the rules above
