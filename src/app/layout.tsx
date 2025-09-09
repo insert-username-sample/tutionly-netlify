@@ -8,7 +8,9 @@ export const metadata: Metadata = {
   keywords: "AI tutoring, personalized learning, online education, homework help, adaptive learning",
   authors: [{ name: "Tuitionly" }],
   icons: {
-    icon: "/favicon.png",
+    icon: '/favicon.png',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.png',
   },
 };
 

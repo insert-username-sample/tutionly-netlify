@@ -643,14 +643,15 @@ const DemoPage: React.FC = () => {
     };
 
     const handleVolumeLevel = (volume: number) => {
-      if (isAISpeakingRef.current) return;
       console.log('User volume level:', volume);
-      if (volume > 0.1) {
+      // Always track user volume - this should affect the "You" bar
+      if (volume > 0.01) {
         setIsUserSpeaking(true);
         const newLevels = Array(5).fill(0).map(() => Math.random() * volume * 200);
         setUserAudioLevels(newLevels);
       } else {
         setIsUserSpeaking(false);
+        setUserAudioLevels([4, 4, 4, 4, 4]);
       }
     };
 
@@ -1070,34 +1071,6 @@ const DemoPage: React.FC = () => {
                             >
                               {/* Voice Animations - User and AI */}
                               <div className="flex items-center gap-6">
-                                {/* User Voice Animation */}
-                                <div className="flex flex-col items-center gap-2">
-                                  <div className="flex items-center gap-1">
-                                    {userAudioLevels.map((level, i) => (
-                                      <motion.div
-                                        key={`user-${i}`}
-                                        className={`w-1 rounded-full ${
-                                          isUserSpeaking ? 'bg-blue-400' : 'bg-white/40'
-                                        }`}
-                                        style={{
-                                          height: `${level}px`,
-                                          minHeight: '4px',
-                                          maxHeight: '20px'
-                                        }}
-                                        animate={{
-                                          height: isUserSpeaking ? `${level}px` : '4px',
-                                          opacity: isUserSpeaking ? 1 : 0.4
-                                        }}
-                                        transition={{
-                                          duration: 0.1,
-                                          ease: "easeInOut"
-                                        }}
-                                      />
-                                    ))}
-                                  </div>
-                                  <span className="text-xs text-white/80">You</span>
-                                </div>
-
                                 {/* Tutorly Voice Animation */}
                                 <div className="flex flex-col items-center gap-2">
                                   <div className="flex items-center gap-1">
@@ -1123,9 +1096,38 @@ const DemoPage: React.FC = () => {
                                       />
                                     ))}
                                   </div>
-                                  <span className="text-xs text-white/80">Tutorly</span>
+                                  <span className="text-xs text-white/80">You</span>
                                 </div>
                               </div>
+                                {/* User Voice Animation */}
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className="flex items-center gap-1">
+                                    {userAudioLevels.map((level, i) => (
+                                      <motion.div
+                                        key={`user-${i}`}
+                                        className={`w-1 rounded-full ${
+                                          isUserSpeaking ? 'bg-blue-400' : 'bg-white/40'
+                                        }`}
+                                        style={{
+                                          height: `${level}px`,
+                                          minHeight: '4px',
+                                          maxHeight: '20px'
+                                        }}
+                                        animate={{
+                                          height: isUserSpeaking ? `${level}px` : '4px',
+                                          opacity: isUserSpeaking ? 1 : 0.4
+                                        }}
+                                        transition={{
+                                          duration: 0.1,
+                                          ease: "easeInOut"
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                  <span className="text-xs text-white/80">Tutorly</span>
+                                </div>
+
+                                
                               
                               {/* Connection Status */}
                               <div className="flex items-center gap-2">
