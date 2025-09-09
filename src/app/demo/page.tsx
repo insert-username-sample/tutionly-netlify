@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Volume2, VolumeX, MessageSquare, BookOpen, Calculator, PenTool, Upload, FileText, Mic, MicOff, PhoneOff, Users, Moon, Sun, Download, FileDown, NotebookPen, Camera } from 'lucide-react';
+import { ArrowLeft, Volume2, VolumeX, MessageSquare, BookOpen, Calculator, PenTool, Upload, FileText, Mic, MicOff, PhoneOff, Users, Moon, Sun, Download, FileDown, NotebookPen, Camera, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import GlassCard from '@/components/ui/GlassCard';
@@ -14,6 +14,9 @@ import { getVapi } from '@/lib/vapi';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { getAuth } from '@/lib/firebase';
 import { Auth } from 'firebase/auth';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import MarkdownRenderer from '@/components/ui/MarkdownRenderer';
 
 const generateSessionNotes = (
   selectedSubject: string,
@@ -56,17 +59,11 @@ const generateSessionNotes = (
     messages.slice(-5).forEach((message, index) => {
       if (message.sender === 'user') {
         notes += `**Student Question (Q${index + 1}):** ${message.content}\n`;
-      } else {
+      } else if (message.sender === 'ai') {
         notes += `**${tutor.name} Response:** ${message.content.slice(0, 100)}...\n`;
       }
     });
     notes += `\n`;
-
-    notes += `### Communication Analysis:\n`;
-    notes += `- Short, concise questions show focused learning approach\n`;
-    notes += `- AI responses provided clear, structured explanations\n`;
-    notes += `- Interactive back-and-forth conversation maintained engagement\n`;
-    notes += `- Topic remained focused on ${selectedTopic || tutor.defaultTopic}\n\n`;
   }
 
   notes += `## 📚 Key Concepts Covered\n`;
@@ -95,7 +92,7 @@ const generateSessionNotes = (
   notes += `4. Review practice problem solutions independently\n\n`;
 
   notes += `### Medium-Term Goals (Next 2 Weeks):\n`;
-  notes += `1. Master all problem types covered in ${tutor.subject}\n`;
+  notes += `1. Master all problem types covered in ${selectedSubject}\n`;
   notes += `2. Develop personal problem-solving strategies\n`;
   notes += `3. Build confidence in explaining solutions\n`;
   notes += `4. Apply concepts to real-world scenarios\n\n`;
@@ -141,6 +138,8 @@ const DemoPage: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const isAISpeakingRef = useRef(isAISpeaking);
+  isAISpeakingRef.current = isAISpeaking;
   const [userAudioLevels, setUserAudioLevels] = useState([4, 4, 4, 4, 4]);
   const [aiAudioLevels, setAiAudioLevels] = useState([4, 4, 4, 4, 4]);
   const [messages, setMessages] = useState<Array<{id: string, sender: 'user' | 'ai', content: string, timestamp: string}>>([]);
@@ -156,6 +155,8 @@ const DemoPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hasSentInitialTopic = useRef<boolean>(false);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   
   // Initialize default topic for selected subject
   useEffect(() => {
@@ -187,7 +188,12 @@ const DemoPage: React.FC = () => {
   // Whiteboard state
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawingTool, setDrawingTool] = useState<'pen' | 'calculator'>('pen');
-  const [drawings, setDrawings] = useState<Array<{x: number, y: number, type: 'start' | 'draw'}>>([]);
+  const [drawings, setDrawings] = useState<Array<{x: number, y: number}>>([]);
+  const [calculatorExpression, setCalculatorExpression] = useState('');
+  const [calculatorHistory, setCalculatorHistory] = useState<Array<{expression: string, result: string, timestamp: string}>>([]);
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const lastPointRef = useRef<{x: number, y: number} | null>(null);
 
   // Audio functions for satisfying join sounds
   const playJoinSound = () => {
@@ -231,7 +237,11 @@ const DemoPage: React.FC = () => {
   }, [messages]);
 
   const sendMessage = () => {
-    if (!chatInput.trim()) return;
+    console.log('🚀 sendMessage function called!');
+    if (!chatInput.trim()) {
+      console.log('❌ Chat input is empty, returning');
+      return;
+    }
 
     const newMessage = {
       id: Date.now().toString(),
@@ -245,21 +255,59 @@ const DemoPage: React.FC = () => {
     // Send to VAPI only if connected, otherwise simulate AI response
     try {
       if (isConnected) {
-        // Send the selected topic to the assistant for context
-        vapi.send({
-          type: 'add-message',
-          message: {
-            role: 'system',
-            content: `The user has selected the topic: ${selectedTopic}. ${chatInput}`
+        // Since voice works but text doesn't, try sending it as a real-time conversation message
+        console.log('Sending chat message to VAPI:', chatInput);
+        console.log('Connection status:', isConnected);
+
+        // Try the working format for voice conversations
+        // VAPI might handle text differently during active voice calls
+        try {
+          // This is the format that works for initial topic setup and voice conversations
+          console.log('Trying to send system message format...');
+          vapi.send({
+            type: 'add-message',
+            message: {
+              role: 'user',
+              content: `Student's text question: ${chatInput}`
+            }
+          });
+          console.log('Message sent successfully');
+        } catch (error) {
+          console.warn('Primary format failed, trying alternative...');
+
+          // Alternative: try the direct chat approach
+          try {
+            console.log('Trying direct chat format...');
+            vapi.send({
+              type: 'message',
+              content: chatInput,
+              role: 'user',
+              messageId: newMessage.id
+            });
+            console.log('Alternative message format sent');
+          } catch (error2) {
+            console.error('Both formats failed:', error2);
+            console.error('Original error:', error);
+            throw error2;
           }
-        });
+        }
       } else {
-        // Simulate AI response for text-only mode
+        // Simulate AI response for text-only mode when not connected
+        console.log('Not connected - showing mock response');
         setTimeout(() => {
+          const responses = [
+            `That's an interesting question about ${selectedTopic}! I'm here to help you understand this concept.`,
+            `Great question! Let me explain ${selectedTopic} in simple terms.`,
+            `I'd love to help you with ${selectedTopic}. Here's what you need to know...`,
+            `Perfect question! Understanding ${selectedTopic} is fundamental in ${selectedSubject}. Let me break it down for you.`
+          ];
+
+          const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+
           const aiMessage = {
             id: Date.now().toString() + '-ai',
             sender: 'ai' as const,
-            content: `That's a great question about ${selectedTopic}! I'll help you with that concepts. Could you tell me more details?`,
+            content: randomResponse + ' Please join the live session above to get personalized, real-time AI tutoring!',
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
           setMessages(prev => [...prev, aiMessage]);
@@ -267,6 +315,16 @@ const DemoPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to send message:', error);
+      // Fall back to simulated response if VAPI send fails
+      setTimeout(() => {
+        const aiMessage = {
+          id: Date.now().toString() + '-ai',
+          sender: 'ai' as const,
+          content: `I apologize, but I'm having trouble connecting to the AI assistant right now. Could you try again in a moment? Otherwise, let me know what you'd like to learn about ${selectedTopic}.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      }, 500);
     }
 
     setChatInput('');
@@ -283,40 +341,112 @@ const DemoPage: React.FC = () => {
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (drawingTool !== 'pen') return;
     setIsDrawing(true);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    setDrawings(prev => [...prev, { x, y, type: 'start' }]);
+
+    const coords = getCanvasCoordinates(e);
+    lastPointRef.current = coords;
+    setDrawings([coords]);
   };
-  
+
+  // Get precise canvas coordinates with proper offset handling
+  const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    // Use pageX/pageY for more accurate positioning
+    const x = (e.pageX - window.pageXOffset - rect.left) * scaleX;
+    const y = (e.pageY - window.pageYOffset - rect.top) * scaleY;
+
+    return { x, y };
+  };
+
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || drawingTool !== 'pen') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    setDrawings(prev => [...prev, { x, y, type: 'draw' }]);
+
+    const { x, y } = getCanvasCoordinates(e);
+
+    // Throttle drawing to reduce points (every 2px minimum for smoother drawing)
+    const lastPoint = drawings[drawings.length - 1];
+    if (lastPoint && Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2) < 2) return;
+
+    setDrawings(prev => [...prev, { x, y }]);
   };
   
   const stopDrawing = () => {
     setIsDrawing(false);
+    lastPointRef.current = null;
   };
   
   const clearCanvas = () => {
     setDrawings([]);
+    setCalendarExpressions([]);
+    lastPointRef.current = null;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+  };
+
+  const handleCalculatorInput = (value: string) => {
+    if (value === 'C') {
+      setCalculatorExpression('');
+    } else if (value === 'AC') {
+      setCalculatorExpression('');
+      setCalculatorHistory([]);
+    } else if (value === 'HISTORY') {
+      setShowHistory(true);
+    } else if (value === '=') {
+      try {
+        const result = eval(calculatorExpression.replace(/x/g, '*').replace(/÷/g, '/'));
+        const newHistoryItem = {
+          expression: calculatorExpression,
+          result: result.toString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setCalculatorHistory(prev => [...prev, newHistoryItem]);
+
+        const expression = `${calculatorExpression} = ${result}`;
+
+        // Add result to canvas at center
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const centerX = canvas.width / 2;
+          const centerY = canvas.height / 2;
+
+          const newExpression = {
+            id: Date.now().toString(),
+            expression: expression,
+            position: { x: centerX, y: centerY }
+          };
+
+          setCalendarExpressions(prev => [...prev, newExpression]);
+          setCalculatorExpression(result.toString());
+        }
+      } catch (error) {
+        setCalculatorExpression('Error');
+      }
+    } else if (value === '×') {
+      setCalculatorExpression(prev => prev + '*');
+    } else if (value === '÷') {
+      setCalculatorExpression(prev => prev + '/');
+    } else {
+      setCalculatorExpression(prev => prev + value);
+    }
+  };
+
+  const loadHistoryItem = (expression: string) => {
+    setCalculatorExpression(expression);
+    setShowHistory(false);
+  };
+
+  const toggleCalculator = () => {
+    setShowCalculator(!showCalculator);
   };
   
   const submitToTutorly = () => {
@@ -325,31 +455,162 @@ const DemoPage: React.FC = () => {
     alert(`Drawing submitted to ${tutorName} for analysis!`);
   };
 
-  // Render drawings on canvas
+  const [calendarExpressions, setCalendarExpressions] = useState<Array<{id: string, expression: string, position: {x: number, y: number}}>>([]);
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (drawingTool !== 'calculator') return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
+    // Create a random math expression
+    const expressions = [
+      '2x + 5 = 15',
+      'x² = 25',
+      'y = mx + b',
+      'a² + b² = c²',
+      '∫3x² dx = x³',
+      'd/dx(sin x) = cos x',
+      'lim x→0 sin(x)/x = 1',
+      'f(x) = √(x² + 1)',
+      'e^(iπ) + 1 = 0',
+      'dy/dx = f(x)/g(x)',
+      '∑n=1∞ 1/n² = π²/6'
+    ];
+
+    const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+
+    const newExpression = {
+      id: Date.now().toString(),
+      expression: randomExpression,
+      position: { x, y }
+    };
+
+    setCalendarExpressions(prev => [...prev, newExpression]);
+  };
+
+  // Render drawings and math expressions on canvas
   React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = isDark ? '#60A5FA' : '#3B82F6';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    
-    let currentPath = false;
-    drawings.forEach(point => {
-      if (point.type === 'start') {
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        currentPath = true;
-      } else if (point.type === 'draw' && currentPath) {
-        ctx.lineTo(point.x, point.y);
-        ctx.stroke();
-      }
+
+    // Clear canvas only when we have new drawings, otherwise preserve content
+    if (drawings.length > 0) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Set font for text expressions
+    ctx.font = '18px Arial, sans-serif';
+    ctx.fillStyle = isDark ? '#ffffff' : '#000000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Render math expressions
+    calendarExpressions.forEach((expression) => {
+      ctx.fillText(expression.expression, expression.position.x, expression.position.y);
     });
-  }, [drawings, isDark]);
+
+    // Enhanced smooth drawing with better Bézier curves
+    if (drawings.length >= 2) {
+      ctx.strokeStyle = isDark ? '#60A5FA' : '#3B82F6';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalCompositeOperation = 'source-over';
+
+      ctx.beginPath();
+      ctx.moveTo(drawings[0].x, drawings[0].y);
+
+      // Improved smoothing using cubic Bézier curves for more natural drawing
+      if (drawings.length === 2) {
+        ctx.lineTo(drawings[1].x, drawings[1].y);
+      } else {
+        // Start with first point
+        let prevX = drawings[0].x;
+        let prevY = drawings[0].y;
+
+        for (let i = 1; i < drawings.length; i++) {
+          const currX = drawings[i].x;
+          const currY = drawings[i].y;
+
+          // Calculate control points for smooth curve
+          const cp1x = (prevX + currX) / 2;
+          const cp1y = (prevY + currY) / 2;
+          const cp2x = (prevX + currX) / 2;
+          const cp2y = (prevY + currY) / 2;
+
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, currX, currY);
+
+          prevX = currX;
+          prevY = currY;
+        }
+      }
+
+      ctx.stroke();
+    }
+  }, [drawings, calendarExpressions, isDark]);
+
+  // Real-time drawing implementation
+  const updateDrawing = (newDrawings: Array<{x: number, y: number}>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas for real-time updates
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Set font for text expressions (preserve math expressions)
+    ctx.font = '18px Arial, sans-serif';
+    ctx.fillStyle = isDark ? '#ffffff' : '#000000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    calendarExpressions.forEach((expression) => {
+      ctx.fillText(expression.expression, expression.position.x, expression.position.y);
+    });
+
+    // Smooth real-time drawing
+    if (newDrawings.length >= 2) {
+      ctx.strokeStyle = isDark ? '#60A5FA' : '#3B82F6';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalCompositeOperation = 'source-over';
+
+      ctx.beginPath();
+      ctx.moveTo(newDrawings[0].x, newDrawings[0].y);
+
+      let prevX = newDrawings[0].x;
+      let prevY = newDrawings[0].y;
+
+      for (let i = 1; i < newDrawings.length; i++) {
+        const currX = newDrawings[i].x;
+        const currY = newDrawings[i].y;
+
+        // Simplified curve for real-time performance
+        const midX = (prevX + currX) / 2;
+        const midY = (prevY + currY) / 2;
+
+        ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+
+        prevX = currX;
+        prevY = currY;
+      }
+
+      ctx.stroke();
+    }
+  };
 
   // VAPI Integration
   useEffect(() => {
@@ -382,6 +643,7 @@ const DemoPage: React.FC = () => {
     };
 
     const handleVolumeLevel = (volume: number) => {
+      if (isAISpeakingRef.current) return;
       console.log('User volume level:', volume);
       if (volume > 0.1) {
         setIsUserSpeaking(true);
@@ -394,7 +656,39 @@ const DemoPage: React.FC = () => {
 
     const handleMessage = (message: Record<string, unknown>) => {
       console.log('VAPI Message:', message);
-      if (message.type === 'conversation-update') {
+
+      // Handle direct chat responses
+      if (message.type === 'chat-response' || message.type === 'message') {
+        const content = message.content || message.message || message.text || '';
+        if (content && typeof content === 'string') {
+          console.log('Received chat response:', content);
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            sender: 'ai',
+            content: content,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }]);
+
+          // Animate AI speaking if connected
+          if (isConnected) {
+            setIsAISpeaking(true);
+            const duration = Math.max(2000, content.length * 50); // Minimum 2 seconds
+            const animateAI = () => {
+              const levels = Array.from({ length: 5 }, () => Math.random() * 40 + 15);
+              setAiAudioLevels(levels);
+            };
+            const aiInterval = setInterval(animateAI, 150);
+
+            setTimeout(() => {
+              clearInterval(aiInterval);
+              setIsAISpeaking(false);
+              setAiAudioLevels([4, 4, 4, 4, 4]);
+            }, duration);
+          }
+        }
+      }
+      // Handle conversation updates (legacy format)
+      else if (message.type === 'conversation-update') {
         const conversation = message.conversation as Array<{ role: string; message?: string; content?: string }>;
         const lastMessage = conversation[conversation.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
@@ -452,10 +746,10 @@ const DemoPage: React.FC = () => {
     setIsMicOn(false);
     
     // Generate session notes
-    const notes = generateSessionNotes(selectedSubject, selectedTopic, messages);
+    const notes = generateSessionNotes(selectedSubject, selectedTopic, messagesRef.current);
     setSessionNotes(notes);
     setShowNotes(true);
-  }, [selectedSubject, selectedTopic, messages, vapi]);
+  }, [selectedSubject, selectedTopic, vapi]);
 
   const handleConnectionToggle = useCallback(async () => {
     if (isConnected) {
@@ -475,13 +769,8 @@ const DemoPage: React.FC = () => {
 
         const assistantId = assistantIds[selectedSubject];
 
-        // Start the VAPI call with the assistant ID and initial message
-        const result = await vapi.start({
-          assistantId,
-          assistant: {
-            firstMessage: `I'm here to study about ${selectedTopic}. Please help me learn about this topic and provide explanations, examples, and practice questions related to ${selectedTopic}.`
-          }
-        });
+        // Start the VAPI call with the assistant ID
+        const result = await vapi.start(assistantId);
         
         if (result.demo) {
           console.log('Running in demo mode due to connection issues');
@@ -507,16 +796,16 @@ const DemoPage: React.FC = () => {
         }
       }
     }
-  }, [isConnected, handleDisconnect, selectedSubject, selectedTopic, vapi]);
+  }, [isConnected, handleDisconnect, selectedSubject, vapi]);
 
   // Effect to handle changing the tutor
+  const prevSubjectRef = useRef(selectedSubject);
   useEffect(() => {
-    if (isConnected) {
+    if (prevSubjectRef.current !== selectedSubject && isConnected) {
       handleDisconnect();
-      setTimeout(() => {
-        handleConnectionToggle();
-      }, 1000); // Wait a second before reconnecting
+      setTimeout(handleConnectionToggle, 1000);
     }
+    prevSubjectRef.current = selectedSubject;
   }, [selectedSubject, isConnected, handleDisconnect, handleConnectionToggle]);
 
   const handleMicToggle = () => {
@@ -543,15 +832,22 @@ const DemoPage: React.FC = () => {
   };
 
   const downloadNotes = () => {
-    const blob = new Blob([sessionNotes], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `tuitionly-session-notes-${new Date().toISOString().split('T')[0]}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const input = document.getElementById('session-notes-content');
+    if (input) {
+      html2canvas(input).then((canvas) => {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const imgWidth = canvas.width;
+        const imgHeight = canvas.height;
+        const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+        const imgX = (pdfWidth - imgWidth * ratio) / 2;
+        const imgY = 30;
+        pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+        pdf.save(`tuitionly-session-notes-${new Date().toISOString().split('T')[0]}.pdf`);
+      });
+    }
   };
 
   const closeNotes = () => {
@@ -686,7 +982,7 @@ const DemoPage: React.FC = () => {
               width={240}
               height={60}
             />
-            <h1 className="text-2xl font-bold text-gradient">
+            <h1 className="text-2xl font-bold text-gradient" style={{ fontSize: '2.875rem', lineHeight: '2.25rem' }}>
               Interactive Demo
             </h1>
             <button
@@ -939,27 +1235,11 @@ const DemoPage: React.FC = () => {
                           <span>{isMicOn ? 'Mic On' : 'Mic Off'}</span>
                         </Button>
                       </div>
-                      <div className="p-4 flex items-center justify-center gap-4">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleDisconnect}
-                        >
-                          Leave Session
-                        </Button>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => setIsDemoStarted(false)}
-                        >
-                          Change Subject
-                        </Button>
-                      </div>
                     </GlassCard>
                   </div>
 
                   {/* Chat Sidebar */}
-                  <div className="lg:col-span-1 flex flex-col">
+                  <div className="lg:col-span-1 flex flex-col" style={{ maxHeight: '600px', minHeight: '400px' }}>
                     <GlassCard className="flex-grow flex flex-col h-full">
                       <div className={`p-4 border-b ${
                         isDark ? 'border-gray-700' : 'border-gray-200'
@@ -970,10 +1250,11 @@ const DemoPage: React.FC = () => {
                           Live Chat
                         </h3>
                       </div>
-                      
-                      <div className="flex-1 p-4 overflow-y-auto">
-                        {/* Chat messages */}
-                        <div className="space-y-3">
+
+                      <div className="flex-1 overflow-hidden flex flex-col">
+                        <div className="flex-1 overflow-y-auto p-4">
+                          {/* Chat messages */}
+                          <div className="space-y-3">
                             {messages.length === 0 ? (
                               // Default welcome message when no real conversation
                               <div className="flex gap-3">
@@ -1016,6 +1297,7 @@ const DemoPage: React.FC = () => {
                                 </div>
                               ))
                             )}
+                          </div>
                           <div ref={chatEndRef} />
                         </div>
                       </div>
@@ -1029,20 +1311,27 @@ const DemoPage: React.FC = () => {
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
                             onKeyPress={handleChatKeyPress}
-                            placeholder="Type your question..."
+                            placeholder={
+                              !isConnected
+                                ? "Join class to start chatting..."
+                                : "Type your question..."
+                            }
                             className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-                              isDark 
-                                ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' 
-                                : 'bg-white text-gray-900 placeholder-gray-500 border-gray-300'
-                            } border focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                            disabled={false}
+                              !isConnected
+                                ? (isDark ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed')
+                                : (isDark
+                                  ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
+                                  : 'bg-white text-gray-900 placeholder-gray-500 border-gray-300')
+                            } ${isConnected ? 'focus:ring-2 focus:ring-blue-500 focus:border-transparent' : ''} border`}
+                            disabled={!isConnected}
                           />
                           <Button
                             variant="primary"
                             size="sm"
                             icon={<MessageSquare size={16} />}
                             onClick={sendMessage}
-                            disabled={!chatInput.trim()}
+                            disabled={!chatInput.trim() && !isConnected}
+                            className={!isConnected ? 'cursor-not-allowed opacity-50 hover:opacity-50' : ''}
                           >
                             Send
                           </Button>
@@ -1052,6 +1341,7 @@ const DemoPage: React.FC = () => {
                             icon={<Camera size={16} />}
                             onClick={handleCameraOpen}
                             disabled={!isConnected}
+                            className={!isConnected ? 'cursor-not-allowed' : ''}
                           >
                             {''}
                           </Button>
@@ -1066,10 +1356,10 @@ const DemoPage: React.FC = () => {
               <div className="lg:col-span-3">
                 <GlassCard className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className={`font-semibold text-lg ${
-                      isDark ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      Interactive Whiteboard
+                    <h3 className={`font-semibold text-lg`}>
+                      Interactive Whiteboard <span className={`${
+                        isDark ? 'text-gray-500' : 'text-gray-400'
+                      }`}>(coming soon)</span>
                     </h3>
                     <div className="flex gap-2">
                       <Button 
@@ -1080,11 +1370,13 @@ const DemoPage: React.FC = () => {
                       >
                         Draw
                       </Button>
-                      <Button 
-                        variant={drawingTool === 'calculator' ? 'primary' : 'ghost'} 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         icon={<Calculator size={16} />}
-                        onClick={() => setDrawingTool('calculator')}
+                        onClick={() => {
+                          setShowCalculator(true);
+                        }}
                       >
                         Calculator
                       </Button>
@@ -1106,13 +1398,14 @@ const DemoPage: React.FC = () => {
                       ref={canvasRef}
                       width={800}
                       height={256}
-                      className={`absolute inset-0 w-full h-full cursor-${
-                        drawingTool === 'pen' ? 'crosshair' : 'pointer'
-                      }`}
-                      onMouseDown={startDrawing}
-                      onMouseMove={draw}
-                      onMouseUp={stopDrawing}
-                      onMouseLeave={stopDrawing}
+                      className="absolute inset-0 w-full h-full"
+                      style={{
+                        cursor: 'default'
+                      }}
+                      onMouseDown={drawingTool === 'pen' ? startDrawing : handleCanvasClick}
+                      onMouseMove={drawingTool === 'pen' ? draw : undefined}
+                      onMouseUp={drawingTool === 'pen' ? stopDrawing : undefined}
+                      onMouseLeave={drawingTool === 'pen' ? stopDrawing : undefined}
                     />
                     
                     {drawings.length === 0 && (
@@ -1295,6 +1588,340 @@ const DemoPage: React.FC = () => {
           </motion.div>
         )}
 
+        {/* Calculator Modal */}
+        {showCalculator && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={toggleCalculator}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`w-full max-w-md rounded-2xl overflow-hidden ${
+                isDark ? 'bg-gray-900 border border-gray-700' : 'bg-white border border-gray-200'
+              } shadow-2xl`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Calculator Display */}
+              <div className={`p-6 ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                <div className={`w-full h-16 rounded-lg justify-end items-center px-4 ${
+                  isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900'
+                } border-2 font-mono text-xl flex shadow-inner`}>
+                  <span className="flex-1 text-right overflow-hidden">
+                    {calculatorExpression || '0'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Calculator Controls */}
+              <div className={`px-6 py-3 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                <div className="flex gap-3 justify-center">
+                  {/* Empty controls section - history moved to keypad */}
+                </div>
+              </div>
+
+              {/* Calculator Keypad */}
+              <div className={`p-6 ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+                <div className="grid grid-cols-4 gap-2">
+                  {/* Row 1 */}
+                  <button
+                    onClick={() => handleCalculatorInput('AC')}
+                    className={`aspect-square rounded-lg font-bold text-sm transition-all duration-200 ${
+                      isDark
+                        ? 'bg-orange-600 text-white hover:bg-orange-700 active:bg-orange-800'
+                        : 'bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700'
+                    }`}
+                  >
+                    AC
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('C')}
+                    className={`aspect-square rounded-lg font-bold text-sm transition-all duration-200 ${
+                      isDark
+                        ? 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800'
+                        : 'bg-red-500 text-white hover:bg-red-600 active:bg-red-700'
+                    }`}
+                  >
+                    C
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('HISTORY')}
+                    className={`aspect-square rounded-lg font-bold text-lg flex items-center justify-center transition-all duration-200 ${
+                      isDark
+                        ? 'bg-purple-600 text-white hover:bg-purple-700 active:bg-purple-800'
+                        : 'bg-purple-500 text-white hover:bg-purple-600 active:bg-purple-700'
+                    }`}
+                    title="History"
+                  >
+                    <RotateCcw size={18} />
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('÷')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                        : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                    }`}
+                  >
+                    ÷
+                  </button>
+
+                  {/* Row 2 */}
+                  <button
+                    onClick={() => handleCalculatorInput('7')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    7
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('8')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    8
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('9')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    9
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('×')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                        : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                    }`}
+                  >
+                    ×
+                  </button>
+
+                  {/* Row 3 */}
+                  <button
+                    onClick={() => handleCalculatorInput('4')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    4
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('5')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    5
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('6')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    6
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('-')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                        : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                    }`}
+                  >
+                    -
+                  </button>
+
+                  {/* Row 4 */}
+                  <button
+                    onClick={() => handleCalculatorInput('1')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    1
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('2')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    2
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('3')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    3
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('+')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
+                        : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                    }`}
+                  >
+                    +
+                  </button>
+
+                  {/* Row 5 */}
+                  <button
+                    onClick={() => handleCalculatorInput('0')}
+                    className={`col-span-2 rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    0
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('.')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-gray-700 text-white hover:bg-gray-600 active:bg-gray-800'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300'
+                    }`}
+                  >
+                    .
+                  </button>
+                  <button
+                    onClick={() => handleCalculatorInput('=')}
+                    className={`aspect-square rounded-lg font-bold text-lg transition-all duration-200 ${
+                      isDark
+                        ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                        : 'bg-green-500 text-white hover:bg-green-600 active:bg-green-700'
+                    }`}
+                  >
+                    =
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* History Modal */}
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-60 flex items-center justify-center p-4"
+            onClick={() => setShowHistory(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`w-full max-w-lg max-h-[70vh] rounded-2xl overflow-hidden ${
+                isDark ? 'bg-gray-900 border border-gray-700' : 'bg-white border border-gray-200'
+              } shadow-2xl`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* History Header */}
+              <div className={`p-6 ${isDark ? 'bg-gray-800' : 'bg-gray-50'} flex items-center justify-between border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Calculation History
+                </h3>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className={`p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* History Content */}
+              <div className={`p-6 overflow-y-auto ${calculatorHistory.length === 0 ? 'text-center' : ''}`}>
+                {calculatorHistory.length === 0 ? (
+                  <div className={`py-12 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <Calculator size={48} className="mx-auto mb-4 opacity-50" />
+                    <p>No calculations yet</p>
+                    <p className="text-sm">Your calculation history will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {calculatorHistory.slice().reverse().map((item, index) => (
+                      <div
+                        key={index}
+                        onClick={() => loadHistoryItem(item.expression)}
+                        className={`p-4 rounded-lg border transition-all cursor-pointer ${
+                          isDark
+                            ? 'bg-gray-800 border-gray-700 hover:bg-gray-750 hover:border-gray-600'
+                            : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex item-center justify-between">
+                          <div className="flex-1">
+                            <div className={`font-mono text-lg ${isDark ? 'text-gray-300' : 'text-gray-900'}`}>
+                              {item.expression}
+                            </div>
+                            <div className={`font-mono text-xl font-bold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                              = {item.result}
+                            </div>
+                          </div>
+                          <div className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {item.timestamp}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* History Footer */}
+              <div className={`p-6 ${isDark ? 'bg-gray-800' : 'bg-gray-50'} border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => handleCalculatorInput('AC')}
+                    className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 ${
+                      isDark
+                        ? 'bg-orange-600 text-white hover:bg-orange-700 active:bg-orange-800'
+                        : 'bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700'
+                    }`}
+                  >
+                    Clear All History
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {/* Session Notes Modal */}
         {showNotes && (
           <motion.div
@@ -1357,15 +1984,11 @@ const DemoPage: React.FC = () => {
               </div>
 
               {/* Modal Content */}
-              <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <div id="session-notes-content" className="p-6 overflow-y-auto max-h-[60vh]">
                 <div className={`prose max-w-none ${
                   isDark ? 'prose-invert' : ''
                 }`}>
-                  <div className={`whitespace-pre-wrap font-mono text-sm leading-relaxed ${
-                    isDark ? 'text-gray-300' : 'text-gray-700'
-                  }`}>
-                    {sessionNotes}
-                  </div>
+                  <MarkdownRenderer markdown={sessionNotes} />
                 </div>
               </div>
 
@@ -1379,7 +2002,7 @@ const DemoPage: React.FC = () => {
                     <span className={`text-sm ${
                       isDark ? 'text-gray-400' : 'text-gray-600'
                     }`}>
-                      Notes will be saved as Markdown format
+                      Notes will be saved as PDF format
                     </span>
                   </div>
                   <div className="flex gap-3">

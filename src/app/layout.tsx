@@ -7,6 +7,9 @@ export const metadata: Metadata = {
   description: "AI-powered personalized tutoring that adapts to your unique learning style, memory type, and pace. Get step-by-step solutions and interactive lessons.",
   keywords: "AI tutoring, personalized learning, online education, homework help, adaptive learning",
   authors: [{ name: "Tuitionly" }],
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export const viewport: Viewport = {

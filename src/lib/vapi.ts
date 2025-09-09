@@ -71,7 +71,38 @@ class VapiSDK {
       });
 
       this.vapi.on('message', (message: Record<string, unknown>) => {
-        this.callbacks.onMessage?.(message);
+        console.log('VAPI Received message:', message);
+
+        // Handle different types of VAPI messages
+        if (message.type === 'conversation-update' || message.type === 'message') {
+          console.log('Processing conversation/message:', message);
+          // This is the format we've been using
+          this.callbacks.onMessage?.(message);
+        } else if (message.type === 'chat-response' || message.type === 'text-response') {
+          console.log('Processing chat response:', message);
+          // Direct chat response handling
+          const content = message.content || message.message || message.text || '';
+          this.callbacks.onMessage?.({
+            type: 'chat-response',
+            role: 'assistant',
+            content: content,
+            timestamp: new Date().toISOString()
+          });
+        } else if (message.role === 'assistant') {
+          console.log('Received assistant message:', message);
+          // Handle direct assistant messages
+          const content = message.content || message.message || message.text || '';
+          this.callbacks.onMessage?.({
+            type: 'chat-response',
+            role: 'assistant',
+            content: content,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          // Regular message handling for anything else
+          console.log('Unhandled message type:', message.type);
+          this.callbacks.onMessage?.(message);
+        }
       });
 
       this.vapi.on('error', (error: Error) => {
