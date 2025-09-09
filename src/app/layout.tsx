@@ -21,9 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="icon" href="/favicon.png" />
-      </head>
+      <head />
       <body suppressHydrationWarning={true}>
         <ThemeProvider>
           {children}

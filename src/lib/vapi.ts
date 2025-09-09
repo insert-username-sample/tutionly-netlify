@@ -87,18 +87,15 @@ class VapiSDK {
     this.callbacks = callbacks;
   }
 
-  async start(assistantConfig?: Record<string, unknown>) {
+  async start(assistantConfig?: Record<string, unknown> | string) {
     try {
       console.log('Starting VAPI connection...');
       
-      // Start with basic configuration - don't overwhelm with complex setup initially
-      if (typeof assistantConfig === 'string') {
+      if (assistantConfig) {
         console.log('Connecting to assistant:', assistantConfig);
-        // Try to connect to existing assistant by ID
         await this.vapi.start(assistantConfig);
       } else {
         console.log('Starting with default assistant');
-        // Use default assistant - this usually works better initially
         await this.vapi.start();
       }
       
