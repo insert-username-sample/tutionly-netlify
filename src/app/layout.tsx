@@ -9,8 +9,6 @@ export const metadata: Metadata = {
   authors: [{ name: "Tuitionly" }],
   icons: {
     icon: '/favicon.png',
-    shortcut: '/favicon.ico',
-    apple: '/favicon.png',
   },
 };
 

@@ -221,20 +221,52 @@ const DemoPage: React.FC = () => {
     }
   };
 
-  // Scroll to bottom when new messages arrive, but only if user is already near the bottom
+  // Intelligent auto-scroll to bottom when new messages arrive
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+
   useEffect(() => {
     const chatContainer = chatEndRef.current?.parentElement;
     if (chatContainer) {
+      const handleScroll = () => {
+        const { scrollHeight, scrollTop, clientHeight } = chatContainer;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+        // If user is within 150px of bottom, re-enable auto-scroll
+        if (distanceFromBottom <= 150) {
+          setUserScrolledUp(false);
+        }
+        // If user scrolled up significantly (more than 150px from bottom), disable auto-scroll
+        else if (distanceFromBottom > 150 && !userScrolledUp) {
+          setUserScrolledUp(true);
+        }
+      };
+
+      chatContainer.addEventListener('scroll', handleScroll);
+      return () => chatContainer.removeEventListener('scroll', handleScroll);
+    }
+  }, [userScrolledUp]);
+
+  // Auto-scroll when new messages arrive (only if user hasn't scrolled up)
+  useEffect(() => {
+    const chatContainer = chatEndRef.current?.parentElement;
+    if (chatContainer && !userScrolledUp) {
+      // Check if we're close to bottom before auto-scrolling
       const { scrollHeight, scrollTop, clientHeight } = chatContainer;
-      const isScrolledToBottom = scrollHeight - scrollTop <= clientHeight + 100; // 100px threshold
-      if (isScrolledToBottom) {
-        chatContainer.scrollTo({
-          top: chatContainer.scrollHeight,
-          behavior: 'smooth'
-        });
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+      // Auto-scroll if close to bottom OR if it's a new conversation (first few messages)
+      if (distanceFromBottom <= 100 || messages.length <= 3) {
+        setTimeout(() => {
+          if (chatContainer && chatContainer.scrollHeight > chatContainer.clientHeight) {
+            chatContainer.scrollTo({
+              top: chatContainer.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        }, 150); // Longer delay for better reliability
       }
     }
-  }, [messages]);
+  }, [messages, userScrolledUp]);
 
   const sendMessage = () => {
     console.log('🚀 sendMessage function called!');
