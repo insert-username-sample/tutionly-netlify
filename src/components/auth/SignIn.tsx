@@ -1,6 +1,7 @@
 'use client';
 
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
@@ -9,12 +10,21 @@ import Link from "next/link";
 import { signInWithEmailAndPassword, signInWithPopup, Auth } from "firebase/auth";
 import { getAuth, googleProvider, appleProvider } from "@/lib/firebase";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useAuthState } from "react-firebase-hooks/auth";
 
 const SignIn: FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const { isDark } = useTheme();
   const auth = getAuth();
+  const [user] = useAuthState(auth as Auth);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user) {
+      router.push("/");
+    }
+  }, [user, router]);
 
   const handleSignIn = async () => {
     try {

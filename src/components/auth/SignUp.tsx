@@ -1,6 +1,7 @@
 'use client';
 
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
@@ -9,6 +10,7 @@ import Link from "next/link";
 import { createUserWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { getAuth, googleProvider, appleProvider } from "@/lib/firebase";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useAuthState } from "react-firebase-hooks/auth";
 
 const SignUp: FC = () => {
   const [email, setEmail] = useState("");
@@ -16,6 +18,14 @@ const SignUp: FC = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const { isDark } = useTheme();
   const auth = getAuth();
+  const [user] = useAuthState(auth);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user) {
+      router.push("/");
+    }
+  }, [user, router]);
 
   const handleSignUp = async () => {
     if (password !== confirmPassword) {
