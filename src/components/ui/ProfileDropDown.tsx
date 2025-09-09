@@ -5,9 +5,20 @@ import { motion } from 'framer-motion';
 import { User, Settings, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getAuth } from '@/lib/firebase';
+import { signOut } from 'firebase/auth';
 
 const ProfileDropDown: React.FC = () => {
   const { isDark } = useTheme();
+  const auth = getAuth();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   return (
     <motion.div
@@ -28,7 +39,10 @@ const ProfileDropDown: React.FC = () => {
           Settings
         </Link>
         <div className="h-px my-2 bg-gray-700" />
-        <button className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-700 w-full text-left">
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-700 w-full text-left"
+        >
           <LogOut size={16} />
           Sign Out
         </button>

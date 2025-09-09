@@ -475,16 +475,12 @@ const DemoPage: React.FC = () => {
 
         const assistantId = assistantIds[selectedSubject];
 
-        // Start the VAPI call with the assistant ID
-        const result = await vapi.start({ assistantId });
-
-        // Send the selected topic to the assistant
-        vapi.send({
-          type: 'add-message',
-          message: {
-            role: 'system',
-            content: `The user has selected the topic: ${selectedTopic}`,
-          },
+        // Start the VAPI call with the assistant ID and initial message
+        const result = await vapi.start({
+          assistantId,
+          assistant: {
+            firstMessage: `I'm here to study about ${selectedTopic}. Please help me learn about this topic and provide explanations, examples, and practice questions related to ${selectedTopic}.`
+          }
         });
         
         if (result.demo) {
